@@ -1,0 +1,33 @@
+apiVersion: v1
+kind: BuildConfig
+metadata:
+  creationTimestamp: null
+  labels:
+    name: sample-pipeline
+  name: sample-pipeline
+spec:
+  nodeSelector: null
+  output: {}
+  postCommit: {}
+  resources: {}
+  runPolicy: Serial
+  source:
+    type: None
+  strategy:
+    jenkinsPipelineStrategy:
+      jenkinsfile: |- 
+        @Library('ContainerZone') import com.redhat.connect.*
+        node {
+          stage('test') {
+            def secret = ""
+            def projectid = "p1966151495b64a79545ff0637c5839b01d1d8d717e"
+            def cz = new com.redhat.connect.ContainerZone("foo",projectid, secret)
+            cz.setDockerImageDigest("sha256:a372ddd5d52d5e28c05bd718388f71778c8ec8b935c3dbbe10c9f3747283eff6")
+            def output = cz.getScanResults()
+            wrap([$class: 'AnsiColorBuildWrapper']) {
+              print(output)
+            }
+          }
+        }
+    type: JenkinsPipeline
+  triggers: []
