@@ -68,9 +68,10 @@ class ContainerZone implements Serializable {
     String getDockerImageDigest() { return this.@dockerImageDigest }
 
     /**
-     * POST to uri, retrieves the contents, parses to HashMap.
+     * getResponseMap - POST to uri, retrieves the contents, parses to HashMap.
      *
      * TODO: Add check for any HTTP code !200
+     * TODO: Exception handling
      * https://github.com/codetojoy/talk_maritimedevcon_groovy/blob/master/exampleB_REST_Client/v2_groovy/RESTClient.groovy
      * http://stackoverflow.com/questions/37864542/jenkins-pipeline-notserializableexception-groovy-json-internal-lazymap
      * https://issues.jenkins-ci.org/browse/JENKINS-37629
@@ -98,8 +99,9 @@ class ContainerZone implements Serializable {
     }
 
     /**
-     * The API is not functional
-     * TODO: This method is not functional
+     * waitForScan - waits for resultMap to return more than one object size
+     *
+     * TODO: see below
      * @param timeout
      * @param retry
      * @return boolean
@@ -127,6 +129,8 @@ class ContainerZone implements Serializable {
              * TODO: Find another method of determining when results are available
              * Problem: The API returned a initial object that had a size of 1
              * the further calls were 0.  Once the scan was available the size was 6.
+             * I think it might be a timing issue where the image has been pushed to the registry
+             * but whatever processes in the background does not recognize the image.  Maybe pre-sleep?
              */
 
             if( size > 1 ) {
@@ -143,6 +147,7 @@ class ContainerZone implements Serializable {
     /**
      * getScanResults iterates through assessment list creating easier to read output.
      *
+     * TODO: determine if this method needs to call getResponseMap or if waitForScan just stores the resultMap in the class
      * http://stackoverflow.com/questions/36636017/jenkins-groovy-how-to-call-methods-from-noncps-method-without-ending-pipeline
      * @return String
      */
