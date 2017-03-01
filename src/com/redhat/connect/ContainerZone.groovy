@@ -19,6 +19,7 @@ class ContainerZone implements Serializable {
 
     private String projectId
     private String secret
+    // TODO: is this variable now needed?
     private String imageName
     private String dockerImageDigest
 
@@ -39,10 +40,10 @@ class ContainerZone implements Serializable {
      * @param projectId
      * @param secret
      */
-    ContainerZone(imageName, projectId, secret, dockerImageDigest) {
+    ContainerZone(projectId, secret, dockerImageDigest) {
         this.projectId = projectId
         this.secret = secret
-        this.imageName = imageName
+        // this.imageName = imageName
         this.dockerImageDigest = dockerImageDigest
     }
     /**
@@ -113,6 +114,7 @@ class ContainerZone implements Serializable {
             "docker_image_digest": "${this.dockerImageDigest}"
         }
         """
+        println(jsonString)
 
         for (int i = 0; i < retries; i++) {
             HashMap resultMap = getResponseMap(uri, jsonString)
