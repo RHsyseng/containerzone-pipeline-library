@@ -124,10 +124,15 @@ class ContainerZone implements Serializable {
             println("resultMap.size(): ${size}")
 
             /*
-            if( !resultMap.isEmpty() ) {
+             * TODO: Find another method of determining when results are available
+             * Problem: The API returned a initial object that had a size of 1
+             * the further calls were 0.  Once the scan was available the size was 6.
+             */
+
+            if( size > 1 ) {
                 return true
             }
-            */
+
 
             sleep((long)(timeoutMilliseconds/retries))
         }
