@@ -20,13 +20,18 @@ class ContainerZone implements Serializable {
     private String projectId
     private String secret
     private String imageName
-    private String dockerImageDigest //=
+    private String dockerImageDigest
+
+    /**
+     * Static variables below are to print ASCII characters
+     * and colors to make the output easier to read.
+     */
     private static final String CHECK = "\u2713"
     private static final String X = "\u274C"
-    public static final String ANSI_RESET = "\u001B[0m"
-    public static final String ANSI_BLACK = "\u001B[30m"
-    public static final String ANSI_RED = "\u001B[31m"
-    public static final String ANSI_GREEN = "\u001B[32m"
+    private static final String ANSI_RESET = "\u001B[0m"
+    private static final String ANSI_BLACK = "\u001B[30m"
+    private static final String ANSI_RED = "\u001B[31m"
+    private static final String ANSI_GREEN = "\u001B[32m"
 
     /**
      * Constructor
@@ -34,10 +39,11 @@ class ContainerZone implements Serializable {
      * @param projectId
      * @param secret
      */
-    ContainerZone(imageName, projectId, secret) {
+    ContainerZone(imageName, projectId, secret, dockerImageDigest) {
         this.projectId = projectId
         this.secret = secret
         this.imageName = imageName
+        this.dockerImageDigest = dockerImageDigest
     }
     /**
     * Getter / Setter bug must use @
@@ -71,6 +77,7 @@ class ContainerZone implements Serializable {
      * @return HashMap
      */
     private static final HashMap getResponseMap(String uri, String jsonString) {
+
         CloseableHttpClient client = HttpClientBuilder.create().build()
         HttpPost httpPost = new HttpPost(uri)
         httpPost.addHeader("content-type", "application/json")
@@ -95,22 +102,22 @@ class ContainerZone implements Serializable {
      * @param retry
      * @return boolean
      */
-    public boolean waitForScan(Integer timeout=10, Integer retry=30) {
-        String uri = "https://connect.redhat.com/api/container/status"
+    public boolean waitForScan(int timeout=10, int retry=30) {
+        String uri = "https://stage-connect.redhat.com/api/container/scanResults"
         long timeoutMilliseconds = (long)(timeout * 60 * 1000)
         int retries = (timeout * 60) / retry
         String jsonString = """
         {
             "secret": "${this.secret}",
             "pid": "${this.projectId}"            
+            "docker_image_digest": "${this.dockerImageDigest}"
         }
         """
 
         for (int i = 0; i < retries; i++) {
             HashMap resultMap = getResponseMap(uri, jsonString)
 
-            if (true) { // will depend on status
-                this.dockerImageDigest = "sha256:something"
+            if( !resultMap.isEmpty() ) {
                 return true
             }
 
@@ -169,6 +176,7 @@ class ContainerZone implements Serializable {
      * main is only used for local testing outside of Jenkins
      * will probably be removed at some point.
      */
+    /*
     static void main(String[] args) {
         def secret = ""
         def projectid = "p1966151495b64a79545ff0637c5839b01d1d8d717e"
@@ -179,5 +187,6 @@ class ContainerZone implements Serializable {
         println(cz.getScanResults())
 
     }
+    */
 
 }
