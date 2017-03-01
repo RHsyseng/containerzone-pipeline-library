@@ -110,7 +110,7 @@ class ContainerZone implements Serializable {
         String jsonString = """
         {
             "secret": "${this.secret}",
-            "pid": "${this.projectId}"            
+            "pid": "${this.projectId}",            
             "docker_image_digest": "${this.dockerImageDigest}"
         }
         """
