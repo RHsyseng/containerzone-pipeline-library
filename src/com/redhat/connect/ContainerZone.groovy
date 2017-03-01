@@ -70,6 +70,7 @@ class ContainerZone implements Serializable {
     /**
      * POST to uri, retrieves the contents, parses to HashMap.
      *
+     * TODO: Add check for any HTTP code !200
      * https://github.com/codetojoy/talk_maritimedevcon_groovy/blob/master/exampleB_REST_Client/v2_groovy/RESTClient.groovy
      * http://stackoverflow.com/questions/37864542/jenkins-pipeline-notserializableexception-groovy-json-internal-lazymap
      * https://issues.jenkins-ci.org/browse/JENKINS-37629
@@ -118,10 +119,15 @@ class ContainerZone implements Serializable {
 
         for (int i = 0; i < retries; i++) {
             HashMap resultMap = getResponseMap(uri, jsonString)
+            int size = resultMap.size()
 
+            println("resultMap.size(): ${size}")
+
+            /*
             if( !resultMap.isEmpty() ) {
                 return true
             }
+            */
 
             sleep((long)(timeoutMilliseconds/retries))
         }
