@@ -1,0 +1,21 @@
+= Using Red Hat Container Zone pipeline library 
+Joseph Callen
+:toc:
+
+
+[[Introduction]]
+== Introduction
+
+
+[NOTE]
+====
+The procedure below only works in on-premise or dedicated OpenShift environments.
+====
+
+
+link:groovydoc/index.html[groovydoc]
+
+
+
+
+
