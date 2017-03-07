@@ -1,7 +1,4 @@
 #!/usr/bin/groovy
-/**
- * ContainerZone.groovy
- */
 package com.redhat.connect
 
 
@@ -13,6 +10,53 @@ import org.apache.http.client.methods.*
 import org.apache.http.entity.*
 import org.apache.http.impl.client.*
 
+
+/**
+ * Class to use with a Jenkins Pipeline for the Red Hat ContainerZone
+ * <p>
+ *      Example usage:
+ *      <code><pre class="groovyTestCase">
+ *      node {
+ * stage('get secret') {
+ * openshift.withCluster() {
+ * def secret = openshift.selector('secret/container-zone').object()
+ * dockerCfg = secret.data.'.dockercfg'
+ * }
+ * }
+ * stage('build') {
+ * openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
+ * }
+ * stage('create imagestreamtag') {
+ * cz = new com.redhat.connect.ContainerZone(dockerCfg)
+ * cz.setImageName(imageName)
+ * cz.setImageTag(imageTag)
+ *
+ *
+ * openshift.withCluster() {
+ *
+ * def imageStreamImport = cz.getImageStreamImport("${externalRegistryImageName}", true)
+ * def createImportImage = openshift.create( imageStreamImport )
+ *
+ * def istagobj = openshift.selector("istag/${externalRegistryImageName}:${imageTag}").object()
+ * cz.setDockerImageDigest(istagobj.image.metadata.name)
+ * }
+ * }
+ * stage('waitforscan') {
+ * cz.setUri(uri)
+ * cz.waitForScan(20, 30)
+ * }
+ * stage('scanresults') {
+ * def output = cz.getScanResults()
+ * wrap([$class: 'AnsiColorBuildWrapper']) {
+ * print(output)
+ * }
+ * }
+ * }
+ *      </pre></code>
+ * @author Joseph Callen
+ * @version 0.1
+ *
+ */
 class ContainerZone implements Serializable {
 
     /* variables provided to class */
@@ -28,7 +72,7 @@ class ContainerZone implements Serializable {
     /* variable used in other methods */
     private HashMap scanResultsMap
 
-    /**
+    /*
      * Static variables below are to print ASCII characters
      * and colors to make the output easier to read.
      */
@@ -40,11 +84,12 @@ class ContainerZone implements Serializable {
     private static final String ANSI_GREEN = "\u001B[32m"
 
     /**
-    *
-    * @param dockerCfg
-    * @param dockerImageDigest
-    */
+     * Constructor
+     * @param dockerCfg
+     * @param dockerImageDigest
+     */
     ContainerZone(String dockerCfg, String dockerImageDigest = "") {
+        // TODO: What if this is a /.docker/config.json?
         JsonSlurperClassic parser = new JsonSlurperClassic()
 
         /* Base64 decode the dockercfg, that returns a byte array.  Create a new
@@ -68,7 +113,7 @@ class ContainerZone implements Serializable {
         this.dockerImageDigest = dockerImageDigest
     }
     /**
-     *
+     * Constructor
      * @param projectId
      * @param secret
      * @param dockerImageDigest
@@ -78,10 +123,7 @@ class ContainerZone implements Serializable {
         this.secret = secret
         this.dockerImageDigest = dockerImageDigest
     }
-    /**
-    * Getter / Setter bug must use @
-    * https://issues.jenkins-ci.org/browse/JENKINS-31484
-    */
+
     void setProjectId(value) { this.@projectId = value }
     void setImageName(value) { this.@imageName = value }
     void setSecret(value) { this.@secret = value }
@@ -98,15 +140,21 @@ class ContainerZone implements Serializable {
     String getUri() { return this.@uri }
     HashMap getScanResultsMap() { return this.@scanResultsMap }
 
-    /**
-     * getResponseMap - POST to uri, retrieves the contents, parses to HashMap.
-     *
+    /* NOTE
      * https://github.com/codetojoy/talk_maritimedevcon_groovy/blob/master/exampleB_REST_Client/v2_groovy/RESTClient.groovy
      * http://stackoverflow.com/questions/37864542/jenkins-pipeline-notserializableexception-groovy-json-internal-lazymap
      * https://issues.jenkins-ci.org/browse/JENKINS-37629
+     * http://stackoverflow.com/questions/36636017/jenkins-groovy-how-to-call-methods-from-noncps-method-without-ending-pipeline
+     * Getter / Setter bug must use @
+     * https://issues.jenkins-ci.org/browse/JENKINS-31484
+     */
+
+    /**
+     * POST to uri, retrieves the contents, parses to HashMap.
+     *
      * @param uri
-     * @param json
-     * @return HashMap
+     * @param jsonString
+     * @return HashMap of the parsed JSON string from the API.
      */
     private static final HashMap getResponseMap(String uri, String jsonString) {
 
@@ -153,11 +201,13 @@ class ContainerZone implements Serializable {
         }
     }
     /**
-     * WIP
-     * @param bc
-     * @return
+     * Provides a BuildConfig from an existing BuildConfig modifying the output for the
+     * ContainerZone registry
+     *
+     * @param HashMap buildConfig
+     * @return HashMap that represents the BuildConfig object
      */
-    public HashMap getOpenShiftBuildConfig(HashMap bc) {
+    public HashMap getOpenShiftBuildConfig(HashMap buildConfig) {
         String fromName = "${this.dockerRegistryHost}/${this.projectId}/${this.imageName}:${this.imageTag}"
         try {
             HashMap outputMap = [
@@ -168,14 +218,14 @@ class ContainerZone implements Serializable {
             ]
 
 
-            bc.metadata.uid = null
-            bc.metadata.resourceVersion = null
-            bc.metadata.creationTimestamp = null
+            buildConfig.metadata.uid = null
+            buildConfig.metadata.resourceVersion = null
+            buildConfig.metadata.creationTimestamp = null
 
-            bc.spec.triggers = [:]
-            bc.spec.output = outputMap
+            buildConfig.spec.triggers = [:]
+            buildConfig.spec.output = outputMap
 
-            return outputMap
+            return buildConfig
         }
         catch (all) {
             println(all.toString())
@@ -186,10 +236,11 @@ class ContainerZone implements Serializable {
 
 
     /**
+     * Provides a ImageStreamImport HashMap that will be used to extract the docker image digest.
      *
      * @param importName
      * @param insecure
-     * @return
+     * @return HashMap that represents a ImageStreamImport object
      */
     public HashMap getImageStreamImport(String importName, Boolean insecure = false) {
 
@@ -222,7 +273,8 @@ class ContainerZone implements Serializable {
 
     }
     /**
-     * waitForScan - waits for resultMap to return more than one object size
+     * Based on timeout will wait for the scanResult from the connect containerzone api.  If the result
+     * is not available before the timeout return false otherwise store the result in the class variable and return true.
      *
      * @param timeout
      * @param retry
@@ -266,9 +318,8 @@ class ContainerZone implements Serializable {
     }
 
     /**
-     * getScanResults iterates through assessment list creating easier to read output.
+     * Iterates through assessment list creating easier to read output.
      *
-     * http://stackoverflow.com/questions/36636017/jenkins-groovy-how-to-call-methods-from-noncps-method-without-ending-pipeline
      * @return String
      */
     public String getScanResults() {
