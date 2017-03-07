@@ -13,18 +13,19 @@ import org.apache.http.client.methods.*
 import org.apache.http.entity.*
 import org.apache.http.impl.client.*
 
-/**
- * TODO: Add exception handling
- */
 class ContainerZone implements Serializable {
 
-    private String projectId
-    private String secret
-    // TODO: is this variable now needed?
-    private String imageName
-    private String dockerImageDigest
+    /* variables provided to class */
+    private String projectId            // required
+    private String secret               // required
+    private String imageName            // optional - if OpenShift methods are not used
+    private String dockerImageDigest    // required
     private String uri = "https://connect.redhat.com/api/container/scanResults"
+    private String dockerRegistryHost   // required
+    private String imageTag             // optional - if OpenShift methods are not used
 
+
+    /* variable used in other methods */
     private HashMap scanResultsMap
 
     /**
@@ -39,12 +40,40 @@ class ContainerZone implements Serializable {
     private static final String ANSI_GREEN = "\u001B[32m"
 
     /**
-     * Constructor
-     * @param imageName
+    *
+    * @param dockerCfg
+    * @param dockerImageDigest
+    */
+    ContainerZone(String dockerCfg, String dockerImageDigest = "") {
+        JsonSlurperClassic parser = new JsonSlurperClassic()
+
+        /* Base64 decode the dockercfg, that returns a byte array.  Create a new
+         * string from the array and parse the JSON string to a HashMap.
+         */
+        HashMap dockerCfgMap = (HashMap)parser.parseText(new String(dockerCfg.decodeBase64()))
+        parser = null
+
+        Set keys = dockerCfgMap.keySet()
+        Integer size = (Integer) keys.size()
+
+        if(size == 1) {
+            this.dockerRegistryHost = keys[0]
+        }
+        else {
+            throw new Exception("dockerCfgMap keySet should only be a size of one (1) and is ${size}")
+        }
+
+        this.secret = dockerCfgMap[this.dockerRegistryHost].password
+        this.projectId = dockerCfgMap[this.dockerRegistryHost].username
+        this.dockerImageDigest = dockerImageDigest
+    }
+    /**
+     *
      * @param projectId
      * @param secret
+     * @param dockerImageDigest
      */
-    ContainerZone(projectId, secret, dockerImageDigest) {
+    ContainerZone(String projectId, String secret, String dockerImageDigest) {
         this.projectId = projectId
         this.secret = secret
         this.dockerImageDigest = dockerImageDigest
@@ -58,11 +87,13 @@ class ContainerZone implements Serializable {
     void setSecret(value) { this.@secret = value }
     void setDockerImageDigest(value) { this.@dockerImageDigest = value }
     void setUri(value) { this.@uri = value }
+    void setImageTag(value) { this.@imageTag = value }
 
 
     String getProjectId() { return this.@projectId }
     String getSecret() { return  this.@secret }
     String getImageName() { return this.@imageName }
+    String getImageTag() { return this.@imageTag }
     String getDockerImageDigest() { return this.@dockerImageDigest }
     String getUri() { return this.@uri }
     HashMap getScanResultsMap() { return this.@scanResultsMap }
@@ -111,6 +142,7 @@ class ContainerZone implements Serializable {
         }
         catch (all) {
             println(all.toString())
+            // TODO: Not sure this is recommended, probably should rethrow
             System.exit(1)
         }
         finally {
@@ -120,11 +152,78 @@ class ContainerZone implements Serializable {
             client.close()
         }
     }
+    /**
+     * WIP
+     * @param bc
+     * @return
+     */
+    public HashMap getOpenShiftBuildConfig(HashMap bc) {
+        String fromName = "${this.dockerRegistryHost}/${this.projectId}/${this.imageName}:${this.imageTag}"
+        try {
+            HashMap outputMap = [
+                    "to": [
+                        "kind": "DockerImage",
+                            "name": fromName
+                    ]
+            ]
 
+
+            bc.metadata.uid = null
+            bc.metadata.resourceVersion = null
+            bc.metadata.creationTimestamp = null
+
+            bc.spec.triggers = [:]
+            bc.spec.output = outputMap
+
+            return outputMap
+        }
+        catch (all) {
+            println(all.toString())
+            // TODO: Not sure this is recommended, probably should rethrow
+            System.exit(1)
+        }
+    }
+
+
+    /**
+     *
+     * @param importName
+     * @param insecure
+     * @return
+     */
+    public HashMap getImageStreamImport(String importName, Boolean insecure = false) {
+
+        String fromName = "${this.dockerRegistryHost}/${this.projectId}/${this.imageName}:${this.imageTag}"
+        HashMap importStreamImageMap = [
+                "kind"      : "ImageStreamImport",
+                "apiVersion": "v1",
+                "metadata"  : [
+                        "name": importName
+                ],
+                "spec"      : [
+                        "import": true,
+                        "images": [
+                                [
+                                        "from"        : [
+                                                "kind": "DockerImage",
+                                                "name": fromName
+                                        ]   ,
+                                        "to"          : [
+                                                "name": "latest"
+                                        ],
+                                        "importPolicy": [
+                                                "insecure": insecure
+                                        ]
+                                ]
+                        ]
+                ]
+        ]
+        return importStreamImageMap
+
+    }
     /**
      * waitForScan - waits for resultMap to return more than one object size
      *
-     * TODO: see below
      * @param timeout
      * @param retry
      * @return boolean
@@ -153,9 +252,7 @@ class ContainerZone implements Serializable {
 
             println("resultMap.size(): ${size}")
 
-            /*
-             * TODO: Find another method of determining when results are available
-             * Problem: The API returned a initial object that had a size of 1
+            /* Problem: The API returned a initial object that had a size of 1
              * the further calls were 0.  Once the scan was available the size was 6.
              */
 
@@ -178,31 +275,35 @@ class ContainerZone implements Serializable {
         String output = ""
 
         // TODO: Determine the right output and error if not successful
+        // int size = this.scanResultsMap.size()
+        // println("getScanResults scanResultsMap.size(): ${size}")
 
+        try {
+            if (!(boolean) this.scanResultsMap["certifications"][0]["Successful"]) {
+                def assessments = this.scanResultsMap["certifications"][0]["assessment"]
 
-        int size = this.scanResultsMap.size()
+                for (int i = 0; i < (int) assessments.size(); i++) {
+                    HashMap assessment = (HashMap) assessments[i]
 
-        println("getScanResults scanResultsMap.size(): ${size}")
+                    /* Clean up of the assessment name
+                     * Remove the underscore, "exists" and capitalize
+                     */
+                    String name = assessment.name.replaceAll('_', ' ').minus(" exists").capitalize()
 
-        if (!(boolean)this.scanResultsMap["certifications"][0]["Successful"]) {
-            def assessments = this.scanResultsMap["certifications"][0]["assessment"]
-
-            for(int i = 0; i < (int) assessments.size(); i++) {
-                HashMap assessment = (HashMap)assessments[i]
-
-                /* Clean up of the assessment name
-                 * Remove the underscore, "exists" and capitalize
-                 */
-                String name = assessment.name.replaceAll('_', ' ').minus(" exists").capitalize()
-
-                if ((boolean)assessment["value"]) {
-                    output += "${this.ANSI_GREEN} ${this.CHECK} ${name} ${this.ANSI_RESET}\n"
-                } else {
-                    output += "${this.ANSI_RED} ${this.X} ${name} ${this.ANSI_RESET}\n"
+                    if ((boolean) assessment["value"]) {
+                        output += "${this.ANSI_GREEN} ${this.CHECK} ${name} ${this.ANSI_RESET}\n"
+                    } else {
+                        output += "${this.ANSI_RED} ${this.X} ${name} ${this.ANSI_RESET}\n"
+                    }
                 }
             }
         }
-        println(output)
+        catch (all){
+            println(all.toString())
+            // TODO: Not sure this is recommended, probably should rethrow
+            System.exit(1)
+        }
+        // println(output)
         return output
     }
 }
