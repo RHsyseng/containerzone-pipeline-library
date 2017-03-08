@@ -15,6 +15,30 @@ The procedure below only works in on-premise or dedicated OpenShift environments
 
 link:groovydoc/index.html[groovydoc]
 
+=== OpenShift
+
+==== Using Jenkins integrated with OpenShift
+
+The pipeline and the library require additional plugins which are not included in the default Jenkins pod.  The project includes an example that can used. 
+
+[source]
+....
+oc new-project demo
+oc process -f https://raw.githubusercontent.com/RHsyseng/containerzone-pipeline-library/master/jenkins/jenkins-ephemeral-template.yaml | oc create -f -
+....
+
+
+==== Required Secrets Configuration 
+
+Pushing to the Container Zone registry and the API require authentication.  The project id and registry key are provided on the specific project page.
+
+[source]
+....
+
+oc secrets new-dockercfg container-zone --docker-email='your@email.com' --docker-password="${REGISTRY_KEY}" --docker-username='${PROJECT_ID}' --docker-server='registry'
+
+oc secrets add serviceaccount/default secrets/container-zone --for=pull,mount
+....
 
 
 
