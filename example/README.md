@@ -1,8 +1,3 @@
-
-
-
-
-
 This is required for the ImageStreamImport
 
 ```

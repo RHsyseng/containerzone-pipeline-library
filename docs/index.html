@@ -428,7 +428,11 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div id="toc" class="toc">
 <div id="toctitle">Table of Contents</div>
 <ul class="sectlevel1">
-<li><a href="#Introduction">Introduction</a></li>
+<li><a href="#Introduction">Introduction</a>
+<ul class="sectlevel2">
+<li><a href="#_openshift">OpenShift</a></li>
+</ul>
+</li>
 </ul>
 </div>
 </div>
@@ -453,12 +457,40 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <div class="paragraph">
 <p><a href="groovydoc/index.html">groovydoc</a></p>
 </div>
+<div class="sect2">
+<h3 id="_openshift">OpenShift</h3>
+<div class="sect3">
+<h4 id="_using_jenkins_integrated_with_openshift">Using Jenkins integrated with OpenShift</h4>
+<div class="paragraph">
+<p>The pipeline and the library require additional plugins which are not included in the default Jenkins pod.  The project includes an example that can used.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>oc new-project demo
+oc process -f https://raw.githubusercontent.com/RHsyseng/containerzone-pipeline-library/master/jenkins/jenkins-ephemeral-template.yaml | oc create -f -</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_required_secrets_configuration">Required Secrets Configuration</h4>
+<div class="paragraph">
+<p>Pushing to the Container Zone registry and the API require authentication.  The project id and registry key are provided on the specific project page.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>oc secrets new-dockercfg container-zone --docker-email='your@email.com' --docker-password="${REGISTRY_KEY}" --docker-username='${PROJECT_ID}' --docker-server='registry'
+
+oc secrets add serviceaccount/default secrets/container-zone --for=pull,mount</code></pre>
+</div>
+</div>
+</div>
+</div>
 </div>
 </div>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-03-07 17:00:08 EST
+Last updated 2017-03-07 21:52:07 EST
 </div>
 </div>
 </body>
