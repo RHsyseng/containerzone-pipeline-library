@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: scenario-one 
+  annotations:
+    openshift.io/display-name: "Container Zone Scenario One"
+    description: |-
+        Build template for Red Hat partners to deploy their containers from source control and push to Container Zone registry.
+        https://github.com/RHsyseng/containerzone-pipeline-library
+parameters:
+
+- name: REGISTRY_HOST
+  displayName: "Partner Registry Hostname"
+  value: "registry.rhc4tp.openshift.com"
+  required: true
+
+- name: REGISTRY_USERNAME
+  displayName: "Project ID"
+  description: "The Project ID can be found at connect.redhat.com"
+  value: ""
+  required: true
+
+- name: EXTERNAL_REGISTRY_IMAGE_NAME
+  displayName: "Image Name"
+  description: "The name of the image that will be pushed to the partner registry"
+  value: ""
+  required: true
+
+- name: EXTERNAL_REGISTRY_IMAGE_TAG
+  displayName: "Image Tag"
+  value: "latest"
+  required: true
+
+- name: EXTERNAL_OPENSHIFT_URL
+  displayName: "Container Zone OpenShift API"
+  value: "insecure://api.rhc4tp.openshift.com"
+  description: |-
+      RESTful API URL for the OpenShift partner instance; this value should not need to be changed.
+
+- name: SOURCE_REPOSITORY_URL 
+  displayName: "Git Repository URL"
+  description: "Git source URI for image"
+  value: ""
+  required: true
+
+- name: SOURCE_REPOSITORY_REF
+  displayName: "Git Reference"
+  description: "Git branch/tag reference"
+  value: "master"
+  required: true
+
+- name: CONTEXT_DIR
+  displayName: "Context Directory"
+  description: "Path within Git project to build; empty for root project directory."
+  value: ""
+  required: true
+
+- name: SECRET_NAME
+  displayName: "Container Zone Registry/API Secret"
+  description: |-
+      See documentation how to create the required secret for this template.
+      https://rhsyseng.github.io/containerzone-pipeline-library/
+  value: "container-zone"
+  required: true
+
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: "${EXTERNAL_REGISTRY_IMAGE_NAME}-ex-reg"
+  spec:
+    output:
+      pushSecret:
+        name: ${SECRET_NAME} 
+      to:
+        kind: DockerImage
+        name: "${REGISTRY_HOST}/${REGISTRY_USERNAME}/${EXTERNAL_REGISTRY_IMAGE_NAME}:${EXTERNAL_REGISTRY_IMAGE_TAG}"
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      contextDir: "${CONTEXT_DIR}"
+      git:
+        uri: "${SOURCE_REPOSITORY_URL}"
+        ref: "${SOURCE_REPOSITORY_REF}"
+      type: Git
+    strategy:
+      dockerStrategy: {}
+      type: Docker
+    triggers: []
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: "${EXTERNAL_REGISTRY_IMAGE_NAME}-pipeline" 
+  spec:
+    output: {}
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      type: None
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+          @Library('ContainerZone')
+          import com.redhat.connect.*
+          
+          def dockerCfg = ""
+          def cz = null
+          def imageName = "${EXTERNAL_REGISTRY_IMAGE_NAME}"
+          def imageTag = "${EXTERNAL_REGISTRY_IMAGE_TAG}"
+          def externalRegistryImageName = "${imageName}-ex-reg"
+          
+          node {
+            stage('Get OpenShift Secret') {
+                openshift.withCluster() {
+                    def secret = openshift.selector( "secret/${SECRET_NAME}" ).object()
+                    dockerCfg = secret.data.'.dockercfg'
+                }
+            }
+            stage('OpenShift Build') {
+                openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
+            }
+            stage('OpenShift ImageStreamImport') {
+                cz = new com.redhat.connect.ContainerZone(dockerCfg)
+                openshift.withCluster( "${EXTERNAL_OPENSHIFT_URL}", cz.getSecret() ) {
+                    openshift.withProject( "${REGISTRY_USERNAME}" ) {
+                        def istagobj = openshift.selector( "istag/${imageName}:${imageTag}" ).object()
+                        cz.setDockerImageDigest(istagobj.image.metadata.name)
+                    }
+                }
+            }
+            stage('Wait For Scan') {
+                cz.waitForScan(20, 30)
+            }
+            stage('Scan Results') {
+                def output = cz.getScanResults()
+                wrap([$class: 'AnsiColorBuildWrapper']) {
+                    print(output)
+                }
+            }
+          }
+      type: JenkinsPipeline
+    triggers: []

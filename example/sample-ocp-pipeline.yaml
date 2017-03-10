@@ -6,7 +6,7 @@ metadata:
     name: sample-pipeline
   name: sample-pipeline
 spec:
-  nodeSelector: null
+  nodeSelector: {}
   output: {}
   postCommit: {}
   resources: {}
@@ -15,30 +15,49 @@ spec:
     type: None
   strategy:
     jenkinsPipelineStrategy:
-      jenkinsfile: "@Library('ContainerZone')\nimport com.redhat.connect.*\n\n\ndef
-        importImage = [\n            \"kind\":\"ImageStreamImport\",\n            \"apiVersion\":\"v1\",\n
-        \           \"metadata\":[\n               \"name\":\"demo-ex-reg\",\n               \"namespace\":\"czone\",\n
-        \           ],\n            \"spec\":[\n               \"import\":true,\n
-        \              \"images\":[\n                  [\n                     \"from\":[\n
-        \                       \"kind\":\"DockerImage\",\n                        \"name\":\"rhc4tp-registry.stage.a4.vary.redhat.com/p1966151495b64a79545ff0637c5839b01d1d8d717e/demo\"\n
-        \                    ],\n                     \"to\":[\n                        \"name\":\"latest\"\n
-        \                    ],\n                     \"importPolicy\":[\n                        \"insecure\":true\n
-        \                    ]\n                  ]\n               ]\n            ]\n
-        \        ] \n\ndef secret = \"\"\ndef
-        projectid = \"p1966151495b64a79545ff0637c5839b01d1d8d717e\"\ndef dockerImageDigest
-        = \"\"\ndef cz = null\n\nnode {\n    stage('build') {\n        openshiftBuild(buildConfig:
-        'demo-ex-reg', showBuildLogs: 'true')\n    }\n    stage('create imagestreamtag')
-        {\n        \n        openshift.withCluster() {\n            def createImportImage
-        = openshift.create( importImage )\n            \n            def istagobj
-        = openshift.selector('istag/demo-ex-reg:latest').object()\n            dockerImageDigest
-        = istagobj.image.metadata.name\n            \n            // println(\"digest:
-        ${istag.image.metadata.name}\")\n            \n            // println( \"obj:
-        ${createImportImage.names()}\" )\n        }\n    }\n    stage('waitforscan')
-        {\n        cz = new com.redhat.connect.ContainerZone(projectid, secret, dockerImageDigest)
-        \ \n        cz.waitForScan()\n    }\n    stage('scanresults') {\n        def
-        output = cz.getScanResults()\n        wrap([$class: 'AnsiColorBuildWrapper'])
-        {\n          print(output)\n        }  \n    }\n}"
+      jenkinsfile: |-
+          @Library('ContainerZone')
+          import com.redhat.connect.*
+          def secret = ""
+          def projectid = ""
+          def dockerImageDigest = ""
+          def dockerCfg = ""
+          def cz = null
+          def uri = "https://stage-connect.redhat.com/api/container/scanResults"
+          def imageName = "demo"
+          def imageTag = "latest"
+          def externalRegistryImageName = "${imageName}-ex-reg"
+          node {
+            stage('Get OpenShift Secret') {
+                openshift.withCluster() {
+                    def secret = openshift.selector('secret/container-zone').object()
+                    dockerCfg = secret.data.'.dockercfg'
+                }
+            }
+            stage('OpenShift Build') {
+                openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
+            }
+            stage('OpenShift ImageStreamImport') {
+                cz = new com.redhat.connect.ContainerZone(dockerCfg)
+                cz.setImageName(imageName)
+                cz.setImageTag(imageTag)
+                openshift.withCluster() {
+                    def imageStreamImport = cz.getImageStreamImport(${externalRegistryImageName}, true)
+                    def createImportImage = openshift.create( imageStreamImport )
+                    def istagobj = openshift.selector( "istag/${externalRegistryImageName}:${imageTag}" ).object()
+                    cz.setDockerImageDigest(istagobj.image.metadata.name)
+                }
+            }
+            stage('Wait For Scan') {
+                cz.setUri(uri)
+                cz.waitForScan(20, 30)
+            }
+            stage('Scan Results') {
+                def output = cz.getScanResults()
+                wrap([$class: 'AnsiColorBuildWrapper']) {
+                    print(output)
+                }
+            }
+        }
     type: JenkinsPipeline
   triggers: []
-status:
-  lastVersion: 0

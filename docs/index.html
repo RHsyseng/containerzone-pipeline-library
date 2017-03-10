@@ -430,7 +430,13 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <ul class="sectlevel1">
 <li><a href="#Introduction">Introduction</a>
 <ul class="sectlevel2">
-<li><a href="#_openshift">OpenShift</a></li>
+<li><a href="#_get_project_id_and_registry_key">Get Project ID and Registry Key</a></li>
+<li><a href="#_scenario_one">Scenario One</a></li>
+</ul>
+</li>
+<li><a href="#_appendix">Appendix</a>
+<ul class="sectlevel2">
+<li><a href="#_example_pipeline">Appendix A: Example Pipeline</a></li>
 </ul>
 </li>
 </ul>
@@ -448,41 +454,187 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </td>
 <td class="content">
 <div class="paragraph">
-<p>The procedure below only works in on-premise or dedicated OpenShift environments.</p>
+<p>The procedure below only works in on-premise or dedicated OpenShift
+environments.</p>
 </div>
 </td>
 </tr>
 </table>
 </div>
+<div class="sect2">
+<h3 id="_get_project_id_and_registry_key">Get Project ID and Registry Key</h3>
 <div class="paragraph">
-<p><a href="groovydoc/index.html">groovydoc</a></p>
+<p>To get started we need to get two specific values before continuing.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="partner-status.png" alt="partner status">
+</div>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="inbound.png" alt="inbound">
+</div>
+<div class="title">Figure 1: Inbound registry API key</div>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="projectid.png" alt="projectid">
+</div>
+<div class="title">Figure 2: Project ID</div>
+</div>
 </div>
 <div class="sect2">
-<h3 id="_openshift">OpenShift</h3>
-<div class="sect3">
-<h4 id="_using_jenkins_integrated_with_openshift">Using Jenkins integrated with OpenShift</h4>
+<h3 id="_scenario_one">Scenario One</h3>
 <div class="paragraph">
-<p>The pipeline and the library require additional plugins which are not included in the default Jenkins pod.  The project includes an example that can used.</p>
+<div class="title">Using OpenShift and Jenkins Without a Existing Project</div>
+<p>The first scenario is an example when a partner is not currently using OpenShift or Jenkins to build their container image.
+In this section we will walk through setting up a new project, adding Jenkins and finally the scenario one template.</p>
+</div>
+<div class="sect3">
+<h4 id="_deploying_jenkins">Deploying Jenkins</h4>
+<div class="paragraph">
+<p>The pipeline and the library require additional plugins which are not included
+in the default Jenkins. The project includes a modified template with a
+source-to-image build of Jenkins to include the required plugins.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code>oc new-project demo
+<pre class="highlight"><code>oc new-project partner-a
 oc process -f https://raw.githubusercontent.com/RHsyseng/containerzone-pipeline-library/master/jenkins/jenkins-ephemeral-template.yaml | oc create -f -</code></pre>
 </div>
 </div>
 </div>
 <div class="sect3">
-<h4 id="_required_secrets_configuration">Required Secrets Configuration</h4>
+<h4 id="_configuring_secrets">Configuring Secrets</h4>
 <div class="paragraph">
-<p>Pushing to the Container Zone registry and the API require authentication.  The project id and registry key are provided on the specific project page.</p>
+<p>Pushing to the Container Zone registry and the API require authentication.  The project id and registry key are provided on the project page.</p>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code>oc secrets new-dockercfg container-zone --docker-email='your@email.com' --docker-password="${REGISTRY_KEY}" --docker-username='${PROJECT_ID}' --docker-server='registry'
+<pre class="highlight"><code>oc secrets new-dockercfg container-zone --docker-email='your@email.com' --docker-password="${REGISTRY_KEY}" --docker-username='${PROJECT_ID}' --docker-server='registry'</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>Both the BuildConfig and the ImageStreamTag (created in the pipeline with
+ImageStreamImport) require authentication to the registry. Adding the
+container-zone secret to the default service account provides this access.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>oc secrets add serviceaccount/default secrets/container-zone --for=pull,mount</code></pre>
+</div>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_using_the_template">Using the Template</h4>
+<div class="paragraph">
+<p>Let&#8217;s first import the template using the <code>oc create</code> command.</p>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code>oc create -f  https://raw.githubusercontent.com/RHsyseng/containerzone-pipeline-library/master/example/scenario-one-template.yaml</code></pre>
+</div>
+</div>
+<div class="paragraph">
+<p>After the template has been imported we can use the web interface to deploy the template.</p>
+</div>
+<div class="imageblock">
+<div class="content">
+<img src="s1-template.png" alt="s1 template">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="sect1">
+<h2 id="_appendix">Appendix</h2>
+<div class="sectionbody">
+<div class="sect2">
+<h3 id="_example_pipeline">Appendix A: Example Pipeline</h3>
+<div class="admonitionblock note">
+<table>
+<tr>
+<td class="icon">
+<div class="title">Note</div>
+</td>
+<td class="content">
+<div class="paragraph">
+<p>This needs to be updated</p>
+</div>
+</td>
+</tr>
+</table>
+</div>
+<div class="listingblock">
+<div class="content">
+<pre class="highlight"><code class="language-groovy" data-lang="groovy">@Library('ContainerZone')                                                   <b class="conum">(1)</b>
+import com.redhat.connect.*
+def secret = ""
+def projectid = ""
+def dockerImageDigest = ""
+def dockerCfg = ""
+def cz = null
+def imageName = "demo"
+def imageTag = "latest"
+def externalRegistryImageName = "${imageName}-ex-reg"
+def scanSuccess = false
 
-oc secrets add serviceaccount/default secrets/container-zone --for=pull,mount</code></pre>
+node {
+  stage('Get OpenShift Secret') {                                           <b class="conum">(2)</b>
+      openshift.withCluster() {
+          def secret = openshift.selector('secret/container-zone').object()
+          dockerCfg = secret.data.'.dockercfg'
+      }
+  }
+  stage('OpenShift Build') {                                                <b class="conum">(3)</b>
+      openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
+  }
+  stage('OpenShift ImageStreamImport') {                                    <b class="conum">(4)</b>
+      cz = new com.redhat.connect.ContainerZone(dockerCfg)
+      openshift.withCluster() {
+          def istagobj = openshift.selector("istag/${externalRegistryImageName}:${imageTag}").object()
+          cz.setDockerImageDigest(istagobj.image.metadata.name)
+      }
+  }
+  stage('Wait For Scan') {                                                  <b class="conum">(5)</b>
+      scanSuccess = cz.waitForScan(20, 30)
+  }
+  stage('Scan Results') {                                                   <b class="conum">(6)</b>
+      def output = cz.getScanResults()
+      wrap([$class: 'AnsiColorBuildWrapper']) {
+          print(output)
+      }
+  }
+}</code></pre>
 </div>
 </div>
+<div class="colist arabic">
+<ol>
+<li>
+<p>Use the library defined in Global Pipeline libraries and import.</p>
+</li>
+<li>
+<p>The Container Zone API requires the project id and the registry key which
+will be provided using the secret <code>container-zone</code>.</p>
+</li>
+<li>
+<p>Use the BuildConfig to build and push the container image</p>
+</li>
+<li>
+<p>Another requirement of the API is the image digest. which is provided by
+creating a OpenShift ImageStreamImport object. The ImageStreamImport creates an
+ImageStream and ImageStrageTag.  The tag is where we extract the image digest.</p>
+</li>
+<li>
+<p>In this step we set the uri for the API (shouldn&#8217;t be required upon release)
+and wait for the scan to complete.</p>
+</li>
+<li>
+<p>Print the scan results using color output.</p>
+</li>
+</ol>
 </div>
 </div>
 </div>
@@ -490,7 +642,7 @@ oc secrets add serviceaccount/default secrets/container-zone --for=pull,mount</c
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-03-07 21:52:07 EST
+Last updated 2017-03-09 20:33:01 EST
 </div>
 </div>
 </body>
