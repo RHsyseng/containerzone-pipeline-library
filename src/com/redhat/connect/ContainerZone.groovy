@@ -320,34 +320,49 @@ class ContainerZone implements Serializable {
     /**
      * Iterates through assessment list creating easier to read output.
      *
-     * @return String
+     * @return HashMap
      */
-    public String getScanResults() {
+    public HashMap getScanResults() {
+        String requiredOutput = "${this.ANSI_RED} ***** Required for Certification ***** ${this.ANSI_RESET}\n"
+        String optionalOutput = "${this.ANSI_RED} ***** Not Required for Certification (recommended) ***** ${this.ANSI_RESET}\n"
         String output = ""
+        HashMap scanOutput = new HashMap()
+
 
         // TODO: Determine the right output and error if not successful
         // int size = this.scanResultsMap.size()
         // println("getScanResults scanResultsMap.size(): ${size}")
 
+
         try {
-            if (!(boolean) this.scanResultsMap["certifications"][0]["Successful"]) {
-                def assessments = this.scanResultsMap["certifications"][0]["assessment"]
+            def assessments = this.scanResultsMap["certifications"][0]["assessment"]
 
-                for (int i = 0; i < (int) assessments.size(); i++) {
-                    HashMap assessment = (HashMap) assessments[i]
+            for (int i = 0; i < (int) assessments.size(); i++) {
+                HashMap assessment = (HashMap) assessments[i]
 
-                    /* Clean up of the assessment name
-                     * Remove the underscore, "exists" and capitalize
-                     */
-                    String name = assessment.name.replaceAll('_', ' ').minus(" exists").capitalize()
+                /* Clean up of the assessment name
+                 * Remove the underscore, "exists" and capitalize
+                 */
+                String name = assessment.name.replaceAll('_', ' ').minus(" exists").capitalize()
 
+                // TODO: Find a better way for this...
+                if ((boolean) assessment["required_for_certification"]) {
                     if ((boolean) assessment["value"]) {
-                        output += "${this.ANSI_GREEN} ${this.CHECK} ${name} ${this.ANSI_RESET}\n"
+                        requiredOutput += "${this.ANSI_GREEN} ${this.CHECK} ${name} ${this.ANSI_RESET}\n"
                     } else {
-                        output += "${this.ANSI_RED} ${this.X} ${name} ${this.ANSI_RESET}\n"
+                        requiredOutput += "${this.ANSI_RED} ${this.X} ${name} ${this.ANSI_RESET}\n"
+                    }
+                } else {
+                    if ((boolean) assessment["value"]) {
+                        optionalOutput += "${this.ANSI_GREEN} ${this.CHECK} ${name} ${this.ANSI_RESET}\n"
+                    } else {
+                        optionalOutput += "${this.ANSI_RED} ${this.X} ${name} ${this.ANSI_RESET}\n"
                     }
                 }
             }
+            output = requiredOutput + optionalOutput
+            scanOutput.put("output", output)
+            scanOutput.put("success", (boolean) this.scanResultsMap["certifications"][0]["Successful"])
         }
         catch (all){
             println(all.toString())
@@ -355,6 +370,6 @@ class ContainerZone implements Serializable {
             System.exit(1)
         }
         // println(output)
-        return output
+        return scanOutput
     }
 }
