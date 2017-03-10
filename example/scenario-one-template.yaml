@@ -135,9 +135,12 @@ objects:
                 cz.waitForScan(20, 30)
             }
             stage('Scan Results') {
-                def output = cz.getScanResults()
+                def scanResults = cz.getScanResults()
                 wrap([$class: 'AnsiColorBuildWrapper']) {
-                    print(output)
+                    print(scanResults.output)
+                }
+                if( !(scanResults.success) ) {
+                    error("Certification Scan Failed")
                 }
             }
           }
