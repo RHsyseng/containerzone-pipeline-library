@@ -1,3 +1,5 @@
+#!groovy
+
 @Library('ContainerZone')
 import com.redhat.connect.*
 
@@ -12,7 +14,8 @@ node {
   withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'container-zone', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD']]) {
     docker.withRegistry('https://registry.rhc4tp.openshift.com', 'container-zone') {
       stage('Build Docker Image') {
-        image = docker.build("${env.USERNAME}/usejenkins:latest") 
+        dir("examples/docker")
+        image = docker.build("${env.USERNAME}/czone:latest") 
       }
       stage('Push Image') {
         image.push()
@@ -20,7 +23,7 @@ node {
       stage('Digest and Container Zone') {
         openshift.withCluster( "insecure://api.rhc4tp.openshift.com", "${env.PASSWORD}" ) {
           openshift.withProject( "${env.USERNAME}" ) {
-            def istagobj = openshift.selector( "istag/usejenkins:latest" ).object()
+            def istagobj = openshift.selector( "istag/czone:latest" ).object()
             cz = new com.redhat.connect.ContainerZone(env.USERNAME, env.PASSWORD, istagobj.image.metadata.name)
           }
         }
