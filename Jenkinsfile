@@ -14,8 +14,9 @@ node {
   withCredentials([[$class: 'UsernamePasswordMultiBinding', credentialsId: 'container-zone', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD']]) {
     docker.withRegistry('https://registry.rhc4tp.openshift.com', 'container-zone') {
       stage('Build Docker Image') {
-        dir("examples/docker")
-        image = docker.build("${env.USERNAME}/czone:latest") 
+        dir("examples/docker") {
+            image = docker.build("${env.USERNAME}/czone:latest") 
+        }
       }
       stage('Push Image') {
         image.push()
