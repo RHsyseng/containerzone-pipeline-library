@@ -5,59 +5,22 @@ package com.redhat.connect
 @Grab(group='org.apache.httpcomponents', module='httpclient', version='4.5.2')
 
 import groovy.json.*
+import org.apache.http.NoHttpResponseException
 import org.apache.http.StatusLine
 import org.apache.http.client.methods.*
 import org.apache.http.entity.*
 import org.apache.http.impl.client.*
 
+import javax.naming.TimeLimitExceededException
+import java.util.logging.Level
+import java.util.logging.Logger
 
 /**
  * Class to use with a Jenkins Pipeline for the Red Hat ContainerZone
- * <p>
- *      Example usage:
- *      <code><pre class="groovyTestCase">
- *      node {
- * stage('get secret') {
- * openshift.withCluster() {
- * def secret = openshift.selector('secret/container-zone').object()
- * dockerCfg = secret.data.'.dockercfg'
- * }
- * }
- * stage('build') {
- * openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
- * }
- * stage('create imagestreamtag') {
- * cz = new com.redhat.connect.ContainerZone(dockerCfg)
- * cz.setImageName(imageName)
- * cz.setImageTag(imageTag)
- *
- *
- * openshift.withCluster() {
- *
- * def imageStreamImport = cz.getImageStreamImport("${externalRegistryImageName}", true)
- * def createImportImage = openshift.create( imageStreamImport )
- *
- * def istagobj = openshift.selector("istag/${externalRegistryImageName}:${imageTag}").object()
- * cz.setDockerImageDigest(istagobj.image.metadata.name)
- * }
- * }
- * stage('waitforscan') {
- * cz.setUri(uri)
- * cz.waitForScan(20, 30)
- * }
- * stage('scanresults') {
- * def output = cz.getScanResults()
- * wrap([$class: 'AnsiColorBuildWrapper']) {
- * print(output)
- * }
- * }
- * }
- *      </pre></code>
  * @author Joseph Callen
  * @version 0.1
- *
  */
-class ContainerZone implements Serializable {
+public class ContainerZone implements Serializable {
 
     /* variables provided to class */
     private String projectId            // required
@@ -170,8 +133,8 @@ class ContainerZone implements Serializable {
 
             StatusLine statusLine = response.getStatusLine()
             if (statusLine.getStatusCode() != 200) {
-                println("getResponseMap Error: ${statusLine.getReasonPhrase()}")
-                // TODO: return empty HashMap on error or throw an error
+                //println("getResponseMap Error: ${statusLine.getReasonPhrase()}")
+                throw new ContainerZoneException("Error: HTTP Reason Phrase: ${statusLine.getReasonPhrase()}")
             }
             else {
                 BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(response.getEntity().getContent()))
@@ -189,14 +152,10 @@ class ContainerZone implements Serializable {
             return resultMap
         }
         catch (all) {
-            println(all.toString())
-            // TODO: Not sure this is recommended, probably should rethrow
-            System.exit(1)
+            Logger.getLogger("com.redhat.connect.ContainerZone").log(Level.SEVERE, all.toString())
+            throw all
         }
         finally {
-            /* TODO: since I am calling CloseableHttpClient.execute() multiple time
-             * TODO: does it make more sense to leave the connection open?
-             */
             client.close()
         }
     }
@@ -216,8 +175,6 @@ class ContainerZone implements Serializable {
                             "name": fromName
                     ]
             ]
-
-
             buildConfig.metadata.uid = null
             buildConfig.metadata.resourceVersion = null
             buildConfig.metadata.creationTimestamp = null
@@ -228,9 +185,8 @@ class ContainerZone implements Serializable {
             return buildConfig
         }
         catch (all) {
-            println(all.toString())
-            // TODO: Not sure this is recommended, probably should rethrow
-            System.exit(1)
+            Logger.getLogger("com.redhat.connect.ContainerZone").log(Level.SEVERE, all.toString())
+            throw all
         }
     }
 
@@ -290,31 +246,36 @@ class ContainerZone implements Serializable {
             "docker_image_digest": "${this.dockerImageDigest}"
         }
         """
-        println(jsonString)
 
-        for (int i = 0; i < retries; i++) {
-            /* sleep before returning the scanResults
-             * I think it might be a timing issue where the image has been pushed to the registry
-             * but whatever processes in the background does not recognize the image.
-             */
-            sleep((long)(timeoutMilliseconds/retries))
+        Logger.getLogger("com.redhat.connect.ContainerZone").info("waitForScan projectId: ${this.projectId}, dockerImageDigest: ${this.dockerImageDigest}")
+        try {
+            for (int i = 0; i < retries; i++) {
+                /* sleep before returning the scanResults
+                 * I think it might be a timing issue where the image has been pushed to the registry
+                 * but whatever processes in the background does not recognize the image.
+                 */
+                sleep((long) (timeoutMilliseconds / retries))
 
-            this.scanResultsMap = getResponseMap(uri, jsonString)
-            int size = scanResultsMap.size()
+                this.scanResultsMap = getResponseMap(uri, jsonString)
+                int size = scanResultsMap.size()
 
-            println("resultMap.size(): ${size}")
+                Logger.getLogger("com.redhat.connect.ContainerZone").info("scanResultsMap.size(): ${size}")
 
-            /* Problem: The API returned a initial object that had a size of 1
-             * the further calls were 0.  Once the scan was available the size was 6.
-             */
+                /* Problem: The API returned a initial object that had a size of 1
+                 * the further calls were 0.  Once the scan was available the size was 6.
+                 */
 
-            if( size > 1 ) {
-                return true
+                if (size > 1) {
+                    return true
+                }
             }
         }
+        catch (ContainerZoneException cze) {
+            Logger.getLogger("com.redhat.connect.ContainerZone").log(Level.SEVERE, cze.toString())
+            throw cze
+        }
 
-        /* there were no results before timeout */
-        return false
+        throw new TimeLimitExceededException("No results before timeout")
     }
 
     /**
@@ -327,12 +288,6 @@ class ContainerZone implements Serializable {
         String optionalOutput = "${this.ANSI_RED} ***** Not Required for Certification (recommended) ***** ${this.ANSI_RESET}\n"
         String output = ""
         HashMap scanOutput = new HashMap()
-
-
-        // TODO: Determine the right output and error if not successful
-        // int size = this.scanResultsMap.size()
-        // println("getScanResults scanResultsMap.size(): ${size}")
-
 
         try {
             def assessments = this.scanResultsMap["certifications"][0]["assessment"]
@@ -364,12 +319,20 @@ class ContainerZone implements Serializable {
             scanOutput.put("output", output)
             scanOutput.put("success", (boolean) this.scanResultsMap["certifications"][0]["Successful"])
         }
-        catch (all){
-            println(all.toString())
-            // TODO: Not sure this is recommended, probably should rethrow
-            System.exit(1)
+        catch (all) {
+            Logger.getLogger("com.redhat.connect.ContainerZone").log(Level.SEVERE, all.toString())
+            throw all
         }
-        // println(output)
         return scanOutput
+    }
+}
+
+class ContainerZoneException extends Exception {
+    ContainerZoneException() {}
+    ContainerZoneException(String message) {
+        super(message)
+    }
+    ContainerZoneException(String message, Throwable cause) {
+        super(message, cause)
     }
 }
