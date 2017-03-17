@@ -1,0 +1,130 @@
+apiVersion: v1
+kind: Template
+metadata:
+  name: scenario-one 
+  annotations:
+    openshift.io/display-name: "Container Zone Scenario One"
+    description: |-
+        Build template for Red Hat partners to deploy their containers from source control and push to Container Zone registry.
+        https://github.com/RHsyseng/containerzone-pipeline-library
+parameters:
+
+- name: REGISTRY_HOST
+  displayName: "Partner Registry Hostname"
+  value: "registry.rhc4tp.openshift.com"
+  required: true
+
+- name: REGISTRY_USERNAME
+  displayName: "Project ID"
+  description: "The Project ID can be found at connect.redhat.com"
+  value: ""
+  required: true
+
+- name: EXTERNAL_REGISTRY_IMAGE_NAME
+  displayName: "Image Name"
+  description: "The name of the image that will be pushed to the partner registry"
+  value: ""
+  required: true
+
+- name: EXTERNAL_REGISTRY_IMAGE_TAG
+  displayName: "Image Tag"
+  value: "latest"
+  required: true
+
+- name: EXTERNAL_OPENSHIFT_URL
+  displayName: "Container Zone OpenShift API"
+  value: "insecure://api.rhc4tp.openshift.com"
+  description: |-
+      RESTful API URL for the OpenShift partner instance; this value should not need to be changed.
+
+- name: SOURCE_REPOSITORY_URL 
+  displayName: "Git Repository URL"
+  description: "Git source URI for image"
+  value: ""
+  required: true
+
+- name: SOURCE_REPOSITORY_REF
+  displayName: "Git Reference"
+  description: "Git branch/tag reference"
+  value: "master"
+  required: true
+
+- name: CONTEXT_DIR
+  displayName: "Context Directory"
+  description: "Path within Git project to build; empty for root project directory."
+  value: ""
+  required: true
+
+- name: SECRET_NAME
+  displayName: "Container Zone Registry/API Secret"
+  description: |-
+      See documentation how to create the required secret for this template.
+      https://rhsyseng.github.io/containerzone-pipeline-library/
+  value: "container-zone"
+  required: true
+
+objects:
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: "${EXTERNAL_REGISTRY_IMAGE_NAME}-ex-reg"
+  spec:
+    output:
+      pushSecret:
+        name: ${SECRET_NAME} 
+      to:
+        kind: DockerImage
+        name: "${REGISTRY_HOST}/${REGISTRY_USERNAME}/${EXTERNAL_REGISTRY_IMAGE_NAME}:${EXTERNAL_REGISTRY_IMAGE_TAG}"
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      contextDir: "${CONTEXT_DIR}"
+      git:
+        uri: "${SOURCE_REPOSITORY_URL}"
+        ref: "${SOURCE_REPOSITORY_REF}"
+      type: Git
+    strategy:
+      dockerStrategy: {}
+      type: Docker
+    triggers: []
+
+- apiVersion: v1
+  kind: BuildConfig
+  metadata:
+    name: "${EXTERNAL_REGISTRY_IMAGE_NAME}-pipeline" 
+  spec:
+    output: {}
+    postCommit: {}
+    resources: {}
+    runPolicy: Serial
+    source:
+      type: None
+    strategy:
+      jenkinsPipelineStrategy:
+        jenkinsfile: |-
+            @Library('ContainerZone')
+            import com.redhat.connect.ContainerZone
+            import com.redhat.connect.Utils
+
+            node {
+
+                dockerCfg = getDockerCfgSecret {
+                    secretName = "${SECRET_NAME}"
+                }
+
+                def dockerCfgPassword = new Utils().getDockerCfgPassword(dockerCfg)
+                
+                stage('Start OpenShift Build') {
+                    openshiftBuild(buildConfig: "${EXTERNAL_REGISTRY_IMAGE_NAME}-ex-reg", showBuildLogs: 'true')
+                }
+                dockerDigest = getDockerDigest(dockerCfgPassword) {
+                    openShiftUri = "${EXTERNAL_OPENSHIFT_URL}"
+                    openShiftProject = "${REGISTRY_USERNAME}"
+                    imageName = "${EXTERNAL_REGISTRY_IMAGE_NAME}"
+                    imageTag = "${EXTERNAL_REGISTRY_IMAGE_TAG}"
+                }
+                containerZoneScan(dockerCfg, dockerDigest)
+            }
+      type: JenkinsPipeline
+    triggers: []
