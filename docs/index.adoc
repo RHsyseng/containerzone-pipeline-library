@@ -119,12 +119,12 @@ node {
 
 <1> Use the library defined in Global Pipeline library and import.
 <2> Checkout source
-<3> The link:../vars/dockerBuildPush.groovy[dockerBuildPush.groovy] step.  This step
+<3> The https://github.com/RHsyseng/containerzone-pipeline-library/blob/master/vars/dockerBuildPush.groovy[dockerBuildPush.groovy] step.  This step
 uses credentials to authenticate to the remote registry.  Builds the docker image and pushes
 the image to the registry.
-<4> The link:../vars/dockerDigest.groovy[dockerDigest.groovy] step.  This step uses credential
+<4> The https://github.com/RHsyseng/containerzone-pipeline-library/blob/master/vars/getDockerDigest.groovy[getDockerDigest.groovy] step.  This step uses credential
 to access the remote OpenShift API to retrieve a ImageStreamTag and return the docker image digest.
-<5> The link:../vars/containerZoneScan.groovy[containerZoneScan.groovy] step. This step uses credential
+<5> The https://github.com/RHsyseng/containerzone-pipeline-library/blob/master/vars/containerZoneScan.groovy[containerZoneScan.groovy] step. This step uses credential
 to access the Container Zone API.  It will wait for the scan to complete and print the results of the scan.
 
 
