@@ -86,63 +86,55 @@ image::s1-template.png[]
 == Appendix
 [appendix]
 
-=== Example Pipeline
-
-[NOTE]
-====
-This needs to be updated
-====
+=== Example Jenkins Pipeline using Docker
 
 [source,groovy]
 ....
-@Library('ContainerZone')                                                   <1>
+#!groovy
+
+@Library('ContainerZone')                                                               <1>
 import com.redhat.connect.*
-def secret = ""
-def projectid = ""
-def dockerImageDigest = ""
-def dockerCfg = ""
-def cz = null
-def imageName = "demo"
-def imageTag = "latest"
-def externalRegistryImageName = "${imageName}-ex-reg"
-def scanSuccess = false
 
 node {
-  stage('Get OpenShift Secret') {                                           <2>
-      openshift.withCluster() {
-          def secret = openshift.selector('secret/container-zone').object()
-          dockerCfg = secret.data.'.dockercfg'
-      }
-  }
-  stage('OpenShift Build') {                                                <3>
-      openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
-  }
-  stage('OpenShift ImageStreamImport') {                                    <4>
-      cz = new com.redhat.connect.ContainerZone(dockerCfg)
-      openshift.withCluster() {
-          def istagobj = openshift.selector("istag/${externalRegistryImageName}:${imageTag}").object()
-          cz.setDockerImageDigest(istagobj.image.metadata.name)
-      }
-  }
-  stage('Wait For Scan') {                                                  <5>
-      scanSuccess = cz.waitForScan(20, 30)
-  }
-  stage('Scan Results') {                                                   <6>
-      def output = cz.getScanResults()
-      wrap([$class: 'AnsiColorBuildWrapper']) {
-          print(output)
-      }
-  }
+    stage('checkout') {                                                                 <2>
+        checkout scm
+    }
+
+    dockerBuildPush {                                                                   <3>
+        credentialsId = "container-zone"
+        contextDir = "examples/docker"
+        imageName = "czone"
+        imageTag = "latest"
+    }
+
+    def dockerDigest = getDockerDigest {                                                <4>
+        openShiftUri = "insecure://api.rhc4tp.openshift.com"
+        imageName = "czone"
+        imageTag = "latest"
+    }
+
+    containerZoneScan([credentialsId: 'container-zone', dockerDigest: dockerDigest])    <5>
 }
 ....
 
-<1> Use the library defined in Global Pipeline libraries and import.
-<2> The Container Zone API requires the project id and the registry key which
-will be provided using the secret `container-zone`.
-<3> Use the BuildConfig to build and push the container image
-<4> Another requirement of the API is the image digest. which is provided by
-creating a OpenShift ImageStreamImport object. The ImageStreamImport creates an
-ImageStream and ImageStrageTag.  The tag is where we extract the image digest.
-<5> In this step we set the uri for the API (shouldn't be required upon release)
- and wait for the scan to complete.
-<6> Print the scan results using color output.
+<1> Use the library defined in Global Pipeline library and import.
+<2> Checkout source
+<3> The link:../vars/dockerBuildPush.groovy[dockerBuildPush.groovy] step.  This step
+uses credentials to authenticate to the remote registry.  Builds the docker image and pushes
+the image to the registry.
+<4> The link:../vars/dockerDigest.groovy[dockerDigest.groovy] step.  This step uses credential
+to access the remote OpenShift API to retrieve a ImageStreamTag and return the docker image digest.
+<5> The link:../vars/containerZoneScan.groovy[containerZoneScan.groovy] step. This step uses credential
+to access the Container Zone API.  It will wait for the scan to complete and print the results of the scan.
+
+
+[appendix]
+=== Jenkins Pipeline Links
+
+* https://jenkins.io/doc/book/
+* https://jenkins.io/doc/book/pipeline
+* https://jenkins.io/doc/book/pipeline/shared-libraries/
+* https://jenkins.io/doc/book/pipeline/
+* https://jenkins.io/doc/book/pipeline/syntax/
+* https://jenkins.io/doc/pipeline/steps/
+
