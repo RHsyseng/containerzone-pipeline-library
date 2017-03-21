@@ -436,7 +436,8 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 </li>
 <li><a href="#_appendix">Appendix</a>
 <ul class="sectlevel2">
-<li><a href="#_example_pipeline">Appendix A: Example Pipeline</a></li>
+<li><a href="#_example_jenkins_pipeline_using_docker">Appendix A: Example Jenkins Pipeline using Docker</a></li>
+<li><a href="#_jenkins_pipeline_links">Appendix B: Jenkins Pipeline Links</a></li>
 </ul>
 </li>
 </ul>
@@ -552,89 +553,83 @@ container-zone secret to the default service account provides this access.</p>
 <h2 id="_appendix">Appendix</h2>
 <div class="sectionbody">
 <div class="sect2">
-<h3 id="_example_pipeline">Appendix A: Example Pipeline</h3>
-<div class="admonitionblock note">
-<table>
-<tr>
-<td class="icon">
-<div class="title">Note</div>
-</td>
-<td class="content">
-<div class="paragraph">
-<p>This needs to be updated</p>
-</div>
-</td>
-</tr>
-</table>
-</div>
+<h3 id="_example_jenkins_pipeline_using_docker">Appendix A: Example Jenkins Pipeline using Docker</h3>
 <div class="listingblock">
 <div class="content">
-<pre class="highlight"><code class="language-groovy" data-lang="groovy">@Library('ContainerZone')                                                   <b class="conum">(1)</b>
+<pre class="highlight"><code class="language-groovy" data-lang="groovy">#!groovy
+
+@Library('ContainerZone')                                                               <b class="conum">(1)</b>
 import com.redhat.connect.*
-def secret = ""
-def projectid = ""
-def dockerImageDigest = ""
-def dockerCfg = ""
-def cz = null
-def imageName = "demo"
-def imageTag = "latest"
-def externalRegistryImageName = "${imageName}-ex-reg"
-def scanSuccess = false
 
 node {
-  stage('Get OpenShift Secret') {                                           <b class="conum">(2)</b>
-      openshift.withCluster() {
-          def secret = openshift.selector('secret/container-zone').object()
-          dockerCfg = secret.data.'.dockercfg'
-      }
-  }
-  stage('OpenShift Build') {                                                <b class="conum">(3)</b>
-      openshiftBuild(buildConfig: "${externalRegistryImageName}", showBuildLogs: 'true')
-  }
-  stage('OpenShift ImageStreamImport') {                                    <b class="conum">(4)</b>
-      cz = new com.redhat.connect.ContainerZone(dockerCfg)
-      openshift.withCluster() {
-          def istagobj = openshift.selector("istag/${externalRegistryImageName}:${imageTag}").object()
-          cz.setDockerImageDigest(istagobj.image.metadata.name)
-      }
-  }
-  stage('Wait For Scan') {                                                  <b class="conum">(5)</b>
-      scanSuccess = cz.waitForScan(20, 30)
-  }
-  stage('Scan Results') {                                                   <b class="conum">(6)</b>
-      def output = cz.getScanResults()
-      wrap([$class: 'AnsiColorBuildWrapper']) {
-          print(output)
-      }
-  }
+    stage('checkout') {                                                                 <b class="conum">(2)</b>
+        checkout scm
+    }
+
+    dockerBuildPush {                                                                   <b class="conum">(3)</b>
+        credentialsId = "container-zone"
+        contextDir = "examples/docker"
+        imageName = "czone"
+        imageTag = "latest"
+    }
+
+    def dockerDigest = getDockerDigest {                                                <b class="conum">(4)</b>
+        openShiftUri = "insecure://api.rhc4tp.openshift.com"
+        imageName = "czone"
+        imageTag = "latest"
+    }
+
+    containerZoneScan([credentialsId: 'container-zone', dockerDigest: dockerDigest])    <b class="conum">(5)</b>
 }</code></pre>
 </div>
 </div>
 <div class="colist arabic">
 <ol>
 <li>
-<p>Use the library defined in Global Pipeline libraries and import.</p>
+<p>Use the library defined in Global Pipeline library and import.</p>
 </li>
 <li>
-<p>The Container Zone API requires the project id and the registry key which
-will be provided using the secret <code>container-zone</code>.</p>
+<p>Checkout source</p>
 </li>
 <li>
-<p>Use the BuildConfig to build and push the container image</p>
+<p>The <a href="../vars/dockerBuildPush.groovy">dockerBuildPush.groovy</a> step.  This step
+uses credentials to authenticate to the remote registry.  Builds the docker image and pushes
+the image to the registry.</p>
 </li>
 <li>
-<p>Another requirement of the API is the image digest. which is provided by
-creating a OpenShift ImageStreamImport object. The ImageStreamImport creates an
-ImageStream and ImageStrageTag.  The tag is where we extract the image digest.</p>
+<p>The <a href="../vars/dockerDigest.groovy">dockerDigest.groovy</a> step.  This step uses credential
+to access the remote OpenShift API to retrieve a ImageStreamTag and return the docker image digest.</p>
 </li>
 <li>
-<p>In this step we set the uri for the API (shouldn&#8217;t be required upon release)
-and wait for the scan to complete.</p>
-</li>
-<li>
-<p>Print the scan results using color output.</p>
+<p>The <a href="../vars/containerZoneScan.groovy">containerZoneScan.groovy</a> step. This step uses credential
+to access the Container Zone API.  It will wait for the scan to complete and print the results of the scan.</p>
 </li>
 </ol>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_jenkins_pipeline_links">Appendix B: Jenkins Pipeline Links</h3>
+<div class="ulist">
+<ul>
+<li>
+<p><a href="https://jenkins.io/doc/book/" class="bare">https://jenkins.io/doc/book/</a></p>
+</li>
+<li>
+<p><a href="https://jenkins.io/doc/book/pipeline" class="bare">https://jenkins.io/doc/book/pipeline</a></p>
+</li>
+<li>
+<p><a href="https://jenkins.io/doc/book/pipeline/shared-libraries/" class="bare">https://jenkins.io/doc/book/pipeline/shared-libraries/</a></p>
+</li>
+<li>
+<p><a href="https://jenkins.io/doc/book/pipeline/" class="bare">https://jenkins.io/doc/book/pipeline/</a></p>
+</li>
+<li>
+<p><a href="https://jenkins.io/doc/book/pipeline/syntax/" class="bare">https://jenkins.io/doc/book/pipeline/syntax/</a></p>
+</li>
+<li>
+<p><a href="https://jenkins.io/doc/pipeline/steps/" class="bare">https://jenkins.io/doc/pipeline/steps/</a></p>
+</li>
+</ul>
 </div>
 </div>
 </div>
@@ -642,7 +637,7 @@ and wait for the scan to complete.</p>
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2017-03-09 20:33:01 EST
+Last updated 2017-03-21 09:38:53 EDT
 </div>
 </div>
 </body>
